@@ -27,6 +27,11 @@
 #define XLAT_DIR  P2DIR
 #define XLAT_MASK BIT(2)
 
+// 2.3
+#define MODE_OUT  P2OUT
+#define MODE_DIR  P2DIR
+#define MODE_MASK BIT(3)
+
 // 1.5
 #define SCLK_OUT  P1OUT
 #define SCLK_DIR  P1DIR
@@ -48,7 +53,7 @@
 #define SMCLK_SEL2 P1SEL2
 #define SMCLK_MASK BIT(4)
 
-static uint8_t data[32];
+static uint8_t data[24];
 
 /*!
  @brief Set a single 12-bit value in the write buffer
@@ -96,44 +101,48 @@ void spi_init(void){
 	UCB0CTL1 &= ~0b00000001;
 }
 
-inline void spi_wait(void){
+void inline spi_wait(void){
 	while(UCB0STAT & 1);
 }
 
-inline void spi_write(uint8_t word){
+void inline spi_write(uint8_t word){
 	spi_wait();
 	UCB0TXBUF = word;
 }
 
-inline void xlat_pulse(void){
+void inline xlat_pulse(void){
 	XLAT_OUT |= XLAT_MASK;
 	XLAT_OUT &= ~XLAT_MASK;
 }
 
-inline void blank(uint8_t val){
+void inline blank(uint8_t val){
 	if(val)
 		BLANK_OUT |= BLANK_MASK;
 	else
 		BLANK_OUT &= ~BLANK_MASK;
 }
 
+void inline mode(uint8_t val){
+	if(val)
+		MODE_OUT |= MODE_MASK;
+	else
+		MODE_OUT &= ~MODE_MASK;
+}
+
 void write_buffer(){
 	int i;
-	for(i = 0; i < 32; i++){
-		spi_write(0xFF);
-		//spi_write(data[i]);
-	}
-	for(i = 0; i < 32; i++){
-		spi_write(0x00);
-		//spi_write(data[i]);
+
+	for(i = 0; i < 24; i++){
+		spi_write(data[i]);
 	}
 	spi_wait();
-	blank(1);
 	xlat_pulse();
-	blank(0);
+
 }
 
 int main(void) {
+	uint16_t i;
+
 	WDTCTL = WDTPW | WDTHOLD;
 
 	// Set MCLK for 16MHz
@@ -141,7 +150,8 @@ int main(void) {
 	BCSCTL1 = CALBC1_16MHZ;
 
 	// Set SMCLK for MCLK = 16MHz
-	BCSCTL2 = 0b00000110;
+	// SMCLK = 2MHz
+	BCSCTL2 = 0b00000011;
 
 	__enable_interrupt();
 
@@ -150,6 +160,8 @@ int main(void) {
 
 	XLAT_OUT &= ~XLAT_MASK;
 	XLAT_DIR |= XLAT_MASK;
+	
+	MODE_DIR |= MODE_MASK;
 
 	SCLK_SEL1 |= SCLK_MASK;
 	SCLK_SEL2 |= SCLK_MASK;
@@ -168,24 +180,48 @@ int main(void) {
 
 	TA0R = 0;
 	//TA0CCR0 = 32768 / TICK_PER_S;
-	TA0CTL = 0b0000000100010010;
+	TA0CCR0 = 4096;
+	TA0CTL = 0b0000001000010010;
 	//TA0CCR1 = PULSE_WIDTH;;
 	TA0CCTL1 = 0b0000000000110000;
-
+	
 	spi_init();
 
-	set_value(0, 0xFFF);
-	set_value(1, 0x000);
-	set_value(2, 0xAFF);
-	set_value(3, 0x001);
-	set_two_values(0, 0xFFF, 0x000);
-	set_two_values(2, 0xAFF, 0x001);
 
 	blank(1);
+	blank(0);
+
+	while(1){
+	mode(0);
+	set_value(0, 0x3FF);
+	set_value(1, 0x3FF);
+	set_value(2, 0x3FF);
+	set_value(3, 0x3FF);
+	set_value(4, 0x7FF);
+	set_value(5, 0x7FF);
+	set_value(6, 0x7FF);
+	set_value(7, 0x7FF);
+	set_value(8, 0xFFF);
+	set_value(9, 0xFFF);
+	set_value(10, 0xFFF);
+	set_value(11, 0xFFF);
+	set_value(12, 0xFFF);
+	set_value(13, 0xFFF);
+	set_value(14, 0xFFF);
+	set_value(15, 0xFFF);
 
 	write_buffer();
 
-	while(1){
+	// Write DC values
+	mode(1);
+	for(i = 0; i < 12; i++)
+		spi_write(0xFF);
+	xlat_pulse();
+	
+	blank(0);
+
+	for(i = 1; i; i++);
+
 		//spi_write(0xAA);
 	}
 	
@@ -199,7 +235,6 @@ __attribute__((interrupt(TIMERA1_VECTOR)))
 __attribute__((interrupt(TIMER0_A1_VECTOR)))
 #endif
 void timer_tick_isr(void){
-/*
 	switch(TA0IV){
 	case TA0IV_TAIFG:
 		// Clear that flag
@@ -208,13 +243,14 @@ void timer_tick_isr(void){
 		LPM3_EXIT;
 		break;
 	case TA0IV_TACCR1:
-		TICK_OUT = TICK_OUT & ~(TICKP_MASK | TICKN_MASK);
+		blank(1);
+		blank(0);
 		// Clear that flag
-		TA0CCTL1 &= ~CCIE;
+		//TA0CCTL1 &= ~CCIE;
 		TA0CCTL1 &= ~0x0001;
+		TA0R = 0;
 		break;
 	}
-*/
 }
 
 __attribute__((interrupt(WDT_VECTOR)))
